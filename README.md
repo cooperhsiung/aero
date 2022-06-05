@@ -6,8 +6,8 @@
 
 :rocket: A progressive, idiomatic, and minimalist framework for building Rust HTTP services.
 
-* idiomatic router
-* composable middlewares
+- idiomatic router
+- composable middlewares
 
 ```Rust
 fn main() {
@@ -74,7 +74,6 @@ app.mount(router);
 
 println!("Listening on http://{}", app.socket_addr);
 ```
-
 
 - #### json response
 
