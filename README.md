@@ -1,6 +1,7 @@
 ## Aero
 
-[![crates.io](https://img.shields.io/crates/v/aero.svg)](https://crates.io/crates/aero)
+[![crates.io](https://img.shields.io/crates/v/aero.svg?logo=rust)](https://crates.io/crates/aero)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./README.md)
 
 <p align="center"><img src="logo.png" width="480"/></p>
 
@@ -8,6 +9,7 @@
 
 - idiomatic router
 - composable middlewares
+- build web service with rust painless
 
 ```Rust
 fn main() {
@@ -36,7 +38,9 @@ wip...
 - [x] clean code
 - [x] response json
 - [x] route
+- [ ] async support
 - [ ] body parser
+- [ ] middleware cors
 - [ ] file orgnanize
 - [ ] api orgnanize
 - [ ] publish

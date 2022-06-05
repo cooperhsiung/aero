@@ -4,7 +4,9 @@ use super::response::HttpResponse;
 use super::router::Router;
 use serde::{Deserialize, Serialize};
 
+use futures::{future::BoxFuture, FutureExt};
 use std::error::Error;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -35,7 +37,7 @@ impl<'a> Context<'a> {
 pub struct Handler {
     pub path: String,
     pub method: String,
-    pub func: fn(&mut Context, &mut dyn FnMut(&mut Context)),
+    pub func: fn(&mut Context, &mut dyn FnMut(&mut Context) -> Box<dyn Future<Output = ()>>),
 }
 
 #[derive(Clone)]
@@ -97,7 +99,10 @@ impl<'a> Aero<'a> {
                         content_type: "".to_string(),
                     };
 
-                    handler(ctx, &mut |ctx| {});
+                    let h = handler.await;
+                    h(ctx, &mut |ctx| async {
+                        println!("11");
+                    });
 
                     let result = ctx.body.as_str();
                     let content_type = ctx.content_type.as_str();
@@ -120,7 +125,11 @@ impl<'a> Aero<'a> {
         }
     }
 
-    pub fn get(&mut self, path: &'a str, func: fn(&mut Context, &mut dyn FnMut(&mut Context))) {
+    pub fn get(
+        &mut self,
+        path: &'a str,
+        func: fn(&mut Context, &mut dyn FnMut(&mut Context) -> Box<dyn Future<Output = ()>>),
+    ) {
         &self.layers.push(Handler {
             method: "GET".to_string(),
             path: path.to_string(),
@@ -128,7 +137,11 @@ impl<'a> Aero<'a> {
         });
     }
 
-    pub fn post(&mut self, path: &'a str, func: fn(&mut Context, &mut dyn FnMut(&mut Context))) {
+    pub fn post(
+        &mut self,
+        path: &'a str,
+        func: fn(&mut Context, &mut dyn FnMut(&mut Context) -> Box<dyn Future<Output = ()>>),
+    ) {
         &self.layers.push(Handler {
             method: "POST".to_string(),
             path: path.to_string(),
@@ -136,7 +149,11 @@ impl<'a> Aero<'a> {
         });
     }
 
-    pub fn hold(&mut self, path: &'a str, func: fn(&mut Context, &mut dyn FnMut(&mut Context))) {
+    pub fn hold(
+        &mut self,
+        path: &'a str,
+        func: fn(&mut Context, &mut dyn FnMut(&mut Context) -> Box<dyn Future<Output = ()>>),
+    ) {
         &self.layers.push(Handler {
             method: "ALL".to_string(),
             path: path.to_string(),
@@ -156,22 +173,27 @@ impl<'a> Aero<'a> {
     }
 }
 
-type MidwareFn = fn(&mut Context, &mut dyn FnMut(&mut Context));
+type MidwareFn = fn(&mut Context, &mut dyn FnMut(&mut Context) -> Box<dyn Future<Output = ()>>);
 
-fn compose(
+async fn compose(
     midwares: Vec<MidwareFn>,
     i: usize,
-) -> impl FnMut(&mut Context, &mut dyn FnMut(&mut Context)) {
-    move |ctx: &mut Context, next: &mut dyn FnMut(&mut Context)| {
+) -> impl FnMut(&mut Context, &mut dyn FnMut(&mut Context) -> Box<dyn Future<Output = ()>>) {
+    move |ctx: &mut Context, next: &mut dyn FnMut(&mut Context) -> Box<dyn Future<Output = ()>>| {
         let len = midwares.len();
         if len == 0 {
-            return next(ctx);
+            next(ctx);
+            return;
         }
         if i >= len - 1 {
             return midwares[i](ctx, next);
         }
-        midwares[i](ctx, &mut |ctx| {
-            compose(midwares.clone(), i + 1)(ctx, next);
-        });
+        midwares[i](
+            ctx,
+            Box::new(&mut |ctx| async {
+                let h = compose(midwares.clone(), i + 1);
+                (ctx, next);
+            }),
+        );
     }
 }
