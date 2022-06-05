@@ -1,6 +1,6 @@
 [package]
 name = "aero"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["cooperhsiung <cooperhsiung@gmail.com>"]
 description = "A progressive, idiomatic, and minimalist framework for building Rust HTTP services"
 keywords = ["http", "server", "web"]

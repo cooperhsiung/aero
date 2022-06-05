@@ -15,7 +15,6 @@ pub struct Context<'a> {
     pub res: &'a HttpResponse<'a>,
     pub body: String,
     pub content_type: String,
-    // pub json: ',
 }
 
 pub type Next<'a> = &'a mut dyn FnMut(&mut Context);
@@ -55,8 +54,6 @@ impl<'a> Aero<'a> {
 
     pub async fn run(self) -> Result<(), Box<dyn Error>> {
         let listener = TcpListener::bind(self.socket_addr).await?;
-        // println!("start http://{}", self.socket_addr);
-
         let layers = Arc::new(self.layers);
 
         loop {
@@ -80,19 +77,19 @@ impl<'a> Aero<'a> {
                     let req: HttpRequest = String::from_utf8(buf.to_vec()).unwrap().into();
                     // println!("{},{}", req.method, req.path);
                     let mut handlers = vec![];
-                    for elem in cop.to_vec() {
+                    for layer in cop.to_vec() {
                         // println!("{},{}", req.path, elem.path);
-                        if req.path.starts_with(elem.path.as_str()) {
+                        if req.path.starts_with(layer.path.as_str()) {
                             // println!("{},{}", req.method, elem.method);
-                            if req.method == elem.method || elem.method == "ALL" {
-                                handlers.push(elem.func)
+                            if req.method == layer.method || layer.method == "ALL" {
+                                handlers.push(layer.func)
                             }
                         }
                     }
 
                     // println!("{}", handlers.len());
                     let mut handler = compose(handlers, 0);
-                    let res: HttpResponse = HttpResponse::new("200", None, "", Some("asd".into()));
+                    let res: HttpResponse = HttpResponse::new("200", None, "", Some("OK".into()));
                     let ctx = &mut Context {
                         req: &req,
                         res: &res,
@@ -106,16 +103,15 @@ impl<'a> Aero<'a> {
                     let content_type = ctx.content_type.as_str();
                     // println!("------{} out", result);
                     if result == "" {
-                        let res2 = HttpResponse::new("404", None, "", Some("Not Found".into()));
+                        let res = HttpResponse::new("404", None, "", Some("Not Found".into()));
                         socket
-                            .write_all(String::from(res2).as_bytes())
+                            .write_all(String::from(res).as_bytes())
                             .await
                             .expect("failed to write data to socket");
                     } else {
-                        let res2 =
-                            HttpResponse::new("200", None, content_type, Some(result.into()));
+                        let res = HttpResponse::new("200", None, content_type, Some(result.into()));
                         socket
-                            .write_all(String::from(res2).as_bytes())
+                            .write_all(String::from(res).as_bytes())
                             .await
                             .expect("failed to write data to socket");
                     }
@@ -163,24 +159,19 @@ impl<'a> Aero<'a> {
 type MidwareFn = fn(&mut Context, &mut dyn FnMut(&mut Context));
 
 fn compose(
-    mids: Vec<MidwareFn>,
+    midwares: Vec<MidwareFn>,
     i: usize,
 ) -> impl FnMut(&mut Context, &mut dyn FnMut(&mut Context)) {
     move |ctx: &mut Context, next: &mut dyn FnMut(&mut Context)| {
-        if mids.len() == 0 {
-            next(ctx);
-            return;
+        let len = midwares.len();
+        if len == 0 {
+            return next(ctx);
         }
-        let n = mids.len() - 1;
-        if i == n {
-            let ff = mids[i];
-            ff(ctx, next);
-            return;
+        if i >= len - 1 {
+            return midwares[i](ctx, next);
         }
-        let ff = mids[i];
-        ff(ctx, &mut |ctx| {
-            let y = i + 1;
-            compose(mids.clone(), y)(ctx, next);
+        midwares[i](ctx, &mut |ctx| {
+            compose(midwares.clone(), i + 1)(ctx, next);
         });
     }
 }

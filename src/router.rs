@@ -1,7 +1,4 @@
 use super::application::{Context, Handler};
-use super::{request, request::HttpRequest, response::HttpResponse};
-use std::error::Error;
-use tokio::io;
 
 pub struct Router<'a> {
     pub prefix: &'a str,
