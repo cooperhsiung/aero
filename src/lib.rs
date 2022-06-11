@@ -8,6 +8,7 @@ pub mod application;
 pub mod request;
 pub mod response;
 pub mod router;
+pub mod aio;
 
 pub use application::Aero;
 pub use application::Context;

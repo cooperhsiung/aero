@@ -1,8 +1,23 @@
 // use crate::httpresponse::HttpResponse;
-use super::request::HttpRequest;
-use super::response::HttpResponse;
+use crate::request::HttpRequest;
+use crate::response::HttpResponse;
 use super::router::Router;
 use serde::{Deserialize, Serialize};
+
+use std::any::{Any, TypeId};
+use std::cell::{RefCell, RefMut};
+use std::future;
+use std::future::{Future};
+use futures::future::{ BoxFuture, FutureExt};
+use std::pin::Pin;
+use std::rc::Rc;
+use std::time::Instant;
+use tokio::{
+    self,
+    runtime::Runtime,
+    sync,
+    time::{self, Duration},
+};
 
 use std::error::Error;
 use std::sync::{Arc, Mutex};
@@ -15,9 +30,14 @@ pub struct Context<'a> {
     pub res: &'a HttpResponse<'a>,
     pub body: String,
     pub content_type: String,
+    gonext: bool,
 }
 
-pub type Next<'a> = &'a mut dyn FnMut(&mut Context);
+// pub type  Next = Arc<dyn for<'a> Fn(&'a mut Context) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>>;
+// pub type  Next = Box<dyn   Fn(&mut Context) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>  + Send + Sync + 'static>;
+pub type  Next = Box<dyn for<'a> Fn(&'a mut Context) -> Pin<Box<dyn Future<Output = ()> +Send + 'a>>   + Send
++ Sync  >;
+// pub type  Next = Box<dyn for<'a> Fn(&'a mut Context) -> BoxFuture<'a,()>>;
 
 impl<'a> Context<'a> {
     pub fn send_text(&mut self, content: &'a str) {
@@ -31,14 +51,24 @@ impl<'a> Context<'a> {
     }
 }
 
-#[derive(Clone)]
-pub struct Handler {
+// unsafe impl<'a> Send for Context<'a> {}
+// unsafe impl<'a> Sync for Context<'a> {}
+
+
+// pub type MidFn = Box<dyn   Fn(& mut Context, Next ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + Sync + 'static>;
+// pub type MidFn = Box<dyn for<'a> Fn(&'a mut Context, Next ) -> BoxFuture<'a,()>>;
+// pub type MidFn = fn(&mut Context, fn(&mut Context) -> Pin<Box<dyn Future<Output = ()>>> );
+pub type MidFn = Box<dyn for<'a> Fn(&'a mut Context, Next ) -> Pin<Box<dyn Future<Output = ()> + Send +'a >> + Send + Sync >;
+
+// #[derive(Clone)]
+// #[derive(Debug)]
+pub struct Handler  {
     pub path: String,
     pub method: String,
-    pub func: fn(&mut Context, &mut dyn FnMut(&mut Context)),
+    pub func: MidFn,
 }
 
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct Aero<'a> {
     pub layers: Vec<Handler>,
     pub socket_addr: &'a str,
@@ -54,12 +84,26 @@ impl<'a> Aero<'a> {
 
     pub async fn run(self) -> Result<(), Box<dyn Error>> {
         let listener = TcpListener::bind(self.socket_addr).await?;
+        // let layers = Arc::new(self.layers);
         let layers = Arc::new(self.layers);
+        // let ll = vec![];
+        // for elem in self.layers {
+        //     ll.push(elem);
+        // }
+        // let ll   = Arc::new(ll);
+        // let ll = Arc::new(Mutex::new(ll));
+
+        // let db = Arc::new(Mutex::new(vec![]));
+        // for elem in self.layers {
+        //     db..push(elem);
+        // }
+        // let layers = Arc::clone(&layers);
 
         loop {
             // Asynchronously wait for an inbound socket.
             let (mut socket, _) = listener.accept().await?;
-            let cop = layers.clone();
+            // let cop = layers.clone();
+            let layers = Arc::clone(&layers);
 
             tokio::spawn(async move {
                 let mut buf = [0; 1024];
@@ -77,27 +121,54 @@ impl<'a> Aero<'a> {
                     let req: HttpRequest = String::from_utf8(buf.to_vec()).unwrap().into();
                     // println!("{},{}", req.method, req.path);
                     let mut handlers = vec![];
-                    for layer in cop.to_vec() {
+
+                    // println!("{:?}", self.layers.len());
+
+                    // let finished = cop.lock().await;
+                    // let array = Arc::try_unwrap(cop);
+                    // let array = Arc::try_unwrap(cop).unwrap();
+                    // let array = array.into_inner().unwrap();
+                    // let array = array.lock().unwrap();
+                    // let c = layers.lock().await;
+                    // let cop = layers.clone();
+
+                    for layer in layers.iter() {
                         // println!("{},{}", req.path, elem.path);
                         if req.path.starts_with(layer.path.as_str()) {
                             // println!("{},{}", req.method, elem.method);
                             if req.method == layer.method || layer.method == "ALL" {
-                                handlers.push(layer.func)
+
+
+                                // handlers.push(layer.func);
                             }
                         }
                     }
 
                     // println!("{}", handlers.len());
-                    let mut handler = compose(handlers, 0);
+                    // let mut handler = compose(handlers, 0);
                     let res: HttpResponse = HttpResponse::new("200", None, "", Some("OK".into()));
                     let ctx = &mut Context {
                         req: &req,
                         res: &res,
                         body: "".to_string(),
                         content_type: "".to_string(),
+                        gonext: true,
                     };
 
-                    handler(ctx, &mut |ctx| {});
+                    // handler(ctx, &mut |ctx| {});
+                    let mut i = 0;
+                    for mid in handlers {
+                        println!("---- iiii {}, {}", i ,ctx.gonext);
+                        i += 1;
+                        if !ctx.gonext {
+                            continue;
+                        }
+                        ctx.gonext = false;
+                        let x= mid(ctx, Box::new(|ctx: &mut Context | Box::pin(async  {
+                            ctx.gonext = true;
+                        })));
+                        x.await;
+                    }
 
                     let result = ctx.body.as_str();
                     let content_type = ctx.content_type.as_str();
@@ -120,7 +191,7 @@ impl<'a> Aero<'a> {
         }
     }
 
-    pub fn get(&mut self, path: &'a str, func: fn(&mut Context, &mut dyn FnMut(&mut Context))) {
+    pub fn get(&mut self, path: &'a str, func: MidFn ) {
         &self.layers.push(Handler {
             method: "GET".to_string(),
             path: path.to_string(),
@@ -128,7 +199,7 @@ impl<'a> Aero<'a> {
         });
     }
 
-    pub fn post(&mut self, path: &'a str, func: fn(&mut Context, &mut dyn FnMut(&mut Context))) {
+    pub fn post(&mut self, path: &'a str, func: MidFn) {
         &self.layers.push(Handler {
             method: "POST".to_string(),
             path: path.to_string(),
@@ -136,7 +207,7 @@ impl<'a> Aero<'a> {
         });
     }
 
-    pub fn hold(&mut self, path: &'a str, func: fn(&mut Context, &mut dyn FnMut(&mut Context))) {
+    pub fn hold(&mut self, path: &'a str, func: MidFn) {
         &self.layers.push(Handler {
             method: "ALL".to_string(),
             path: path.to_string(),
@@ -153,25 +224,5 @@ impl<'a> Aero<'a> {
                 func: x.func,
             });
         }
-    }
-}
-
-type MidwareFn = fn(&mut Context, &mut dyn FnMut(&mut Context));
-
-fn compose(
-    midwares: Vec<MidwareFn>,
-    i: usize,
-) -> impl FnMut(&mut Context, &mut dyn FnMut(&mut Context)) {
-    move |ctx: &mut Context, next: &mut dyn FnMut(&mut Context)| {
-        let len = midwares.len();
-        if len == 0 {
-            return next(ctx);
-        }
-        if i >= len - 1 {
-            return midwares[i](ctx, next);
-        }
-        midwares[i](ctx, &mut |ctx| {
-            compose(midwares.clone(), i + 1)(ctx, next);
-        });
     }
 }
