@@ -2,6 +2,7 @@ use super::response::Response;
 use ::futures::future::BoxFuture;
 use async_trait::async_trait;
 use std::sync::Arc;
+use tokio::net::TcpStream;
 
 pub struct Handler {
     pub path: String,
@@ -21,6 +22,7 @@ pub struct Context<'x> {
     pub status: i16,
     pub resp: &'x Response,
     pub method: &'x str,
+    pub socket: &'x TcpStream,
     // tail: Vec<Arc<dyn Middleware>>,
     pub(crate) tail: &'x [Arc<dyn Middleware>],
     pub handler: &'x Arc<dyn HandlerFunc>,
@@ -47,12 +49,14 @@ impl<'a> Context<'a> {
                 resp: self.resp,
                 handler: self.handler,
                 tail,
+                socket: self.socket,
             };
             current.handle(next_ctx).await;
         } else {
             let hctx = HContext {
                 body: self.body.to_string(),
-                resp: *self.resp,
+                // resp: self.resp,
+                socket: self.socket.clone(),
             };
 
             println!("-------from there {}", 1);
@@ -85,13 +89,14 @@ pub trait Middleware: 'static + Send + Sync {
 
 pub struct HContext {
     pub body: String,
-    pub resp: Response,
+    // pub resp: Response,
+    pub socket: TcpStream,
 }
 
 impl HContext {
     pub async fn send_text(&self, data: String) {
         // self.body = data;
-        self.resp.respond(data).await
+        // self.resp.respond(data).await
     }
 }
 

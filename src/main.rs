@@ -3,8 +3,6 @@ use aero::aio::application::Aero;
 use aero::aio::context::{Context, HContext, Middleware};
 use aero::aio::router::Router;
 use async_trait::async_trait;
-// // use aero::Context;
-// // use aero::Next;
 
 struct TestMid {}
 impl TestMid {
