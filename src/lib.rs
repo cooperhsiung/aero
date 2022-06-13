@@ -4,11 +4,11 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+pub mod aio;
 pub mod application;
 pub mod request;
 pub mod response;
 pub mod router;
-pub mod aio;
 
 pub use application::Aero;
 pub use application::Context;

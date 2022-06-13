@@ -1,39 +1,41 @@
-use super::application::{Context, Handler, MidFn};
+// use super::application::{Context, MidFn};
+use super::context::{Handler, HandlerFunc, Middleware, Midwarer};
+use std::sync::Arc;
 
-pub struct Router<'a> {
-    pub prefix: &'a str,
-    pub layers: Vec<Handler>,
+pub struct Router {
+    pub prefix: String,
+    pub handlers: Vec<Handler>,
+    pub middlewares: Vec<Midwarer>,
 }
 
-impl<'a> Router<'a> {
-    pub fn new(prefix: &'a str) -> Self {
+impl Router {
+    pub fn new(prefix: &'static str) -> Self {
         Router {
-            prefix,
-            layers: vec![],
+            prefix: prefix.to_string(),
+            handlers: vec![],
+            middlewares: vec![],
         }
     }
+    pub fn with(&mut self, mid: impl Middleware) {
+        self.middlewares.push(Midwarer {
+            path: "/".to_string(),
+            func: Arc::new(mid),
+        })
+    }
 
-    pub fn get(&mut self, path: &'a str, func: MidFn) {
-        &self.layers.push(Handler {
+    pub fn get(&mut self, path: &'static str, handler: impl HandlerFunc) {
+        self.handlers.push(Handler {
             method: "GET".to_string(),
             path: path.to_string(),
-            func: func,
-        });
+            func: Arc::new(handler),
+        })
     }
 
-    pub fn post(&mut self, path: &'a str, func: MidFn) {
-        &self.layers.push(Handler {
+    pub fn post(&mut self, path: &'static str, handler: impl HandlerFunc) {
+        self.handlers.push(Handler {
             method: "POST".to_string(),
             path: path.to_string(),
-            func: func,
-        });
-    }
-
-    pub fn hold(&mut self, path: &'a str, func: MidFn) {
-        &self.layers.push(Handler {
-            method: "ALL".to_string(),
-            path: path.to_string(),
-            func: func,
-        });
+            func: Arc::new(handler),
+        })
     }
 }
